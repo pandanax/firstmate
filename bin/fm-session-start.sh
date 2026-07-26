@@ -231,6 +231,50 @@ hash_file() {
   fi
 }
 
+# fm_window_name_from_home <home>: the project/domain label for this home.
+# Primary layout is <project>/.firstmate, so a home whose own basename is a
+# hidden dir (.firstmate) resolves to its parent's basename (mandala); any
+# other home (a named secondmate dir, an odd path) resolves to its own
+# basename with a leading dot stripped. Pure string work, never touches the
+# filesystem, and degrades silently rather than erroring on an odd path.
+fm_window_name_from_home() {
+  local home=$1 base parent
+  home=${home%/}
+  base=${home##*/}
+  case "$base" in
+    .*)
+      parent=${home%/*}
+      if [ "$parent" != "$home" ]; then
+        parent=${parent##*/}
+        if [ -n "$parent" ] && [ "$parent" != '.' ]; then
+          printf '%s' "${parent#.}"
+          return 0
+        fi
+      fi
+      printf '%s' "${base#.}"
+      ;;
+    *)
+      printf '%s' "$base"
+      ;;
+  esac
+}
+
+# name_tmux_window: when running under tmux, name THIS window after the
+# project/domain so multiple firstmate instances are visually distinguishable
+# instead of all showing the default harness command name. Turns tmux's
+# automatic-rename OFF first so it does not clobber the name back to the
+# command, then renames the current window only. Silent, idempotent, and
+# safe on any path or lock state: purely cosmetic, so it never errors and is
+# a no-op when not under tmux.
+name_tmux_window() {
+  [ -n "${TMUX:-}" ] || return 0
+  local name
+  name=$(fm_window_name_from_home "$FM_HOME")
+  [ -n "$name" ] || return 0
+  tmux set-window-option automatic-rename off >/dev/null 2>&1 || true
+  tmux rename-window "$name" >/dev/null 2>&1 || true
+}
+
 pi_extension_loaded() {
   local marker=$1 expected_version=$2 lock=$3 marker_version marker_pid lock_pid
   [ -f "$marker" ] && [ -f "$lock" ] && [ -n "$expected_version" ] || return 1
@@ -264,6 +308,11 @@ if [ "$LOCK_RC" -ne 0 ]; then
     printf '%s\n' "$BAR"
   }
 fi
+
+# Name this tmux window after the project/domain so multiple firstmate
+# instances are distinguishable. Cosmetic and lock-independent, so it runs in
+# both locked and read-only sessions; emits nothing into the digest.
+name_tmux_window
 
 # --- 2. bootstrap --------------------------------------------------------
 subsection "BOOTSTRAP"

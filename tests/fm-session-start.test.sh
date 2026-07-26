@@ -1355,6 +1355,70 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+# --- tmux window naming ------------------------------------------------------
+
+# make_fake_tmux_logger <fakebin> <log> <exit>: a fake tmux that appends every
+# invocation's args to <log> and returns <exit>, so a test can prove exactly
+# which window-management commands session start issued.
+make_fake_tmux_logger() {
+  local fakebin=$1 log=$2 code=$3
+  cat > "$fakebin/tmux" <<SH
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "\$*" >> "$log"
+exit $code
+SH
+  chmod +x "$fakebin/tmux"
+}
+
+test_tmux_window_named_after_project() {
+  local rec root home fakebin projhome log out
+  rec=$(new_world tmux-window-name)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  # Primary layout: FM_HOME = <...>/mandala/.firstmate -> window name "mandala".
+  projhome="$TMP_ROOT/tmux-window-name/mandala/.firstmate"
+  mkdir -p "$projhome/state" "$projhome/data" "$projhome/config"
+  log="$TMP_ROOT/tmux-window-name/tmux.log"
+  : > "$log"
+  make_fake_tmux_logger "$fakebin" "$log" 0
+
+  out=$(TMUX=/tmp/fake-tmux,1,0 run_session_start "$projhome" "$root" "$fakebin:$BASE_PATH")
+
+  assert_grep "set-window-option automatic-rename off" "$log" \
+    "session start did not disable tmux automatic-rename for the current window"
+  assert_grep "rename-window mandala" "$log" \
+    "session start did not rename the tmux window to the project name"
+  # The rename must not leak into the digest output.
+  assert_not_contains "$out" "rename-window" "tmux rename mechanics leaked into the session-start digest"
+
+  pass "session start names the current tmux window after the project"
+}
+
+test_tmux_window_name_skipped_without_tmux() {
+  local rec root home fakebin log
+  rec=$(new_world no-tmux-window)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  log="$TMP_ROOT/no-tmux-window/tmux.log"
+  : > "$log"
+  make_fake_tmux_logger "$fakebin" "$log" 1
+
+  # TMUX empty means "not under tmux" - the window-naming step must be a no-op.
+  TMUX='' run_session_start "$home" "$root" "$fakebin:$BASE_PATH" >/dev/null
+
+  assert_no_grep "rename-window" "$log" \
+    "session start renamed a tmux window with no tmux attached"
+
+  pass "session start does not touch tmux window naming when not under tmux"
+}
+
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path
@@ -1382,3 +1446,5 @@ test_pi_diagnostic_rejects_stale_loaded_marker
 test_pi_diagnostic_accepts_prelock_loaded_marker
 test_pi_diagnostic_rejects_missing_turnend_guard_marker
 test_pi_diagnostic_rejects_previous_session_loaded_marker
+test_tmux_window_named_after_project
+test_tmux_window_name_skipped_without_tmux
