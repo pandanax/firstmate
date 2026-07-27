@@ -78,7 +78,7 @@ Codex and OpenCode are also verified and supported as primary harnesses; Codex u
 
 ```sh
 gh auth login
-git clone https://github.com/kunchenguid/firstmate
+git clone https://github.com/pandanax/firstmate
 cd firstmate
 ```
 
