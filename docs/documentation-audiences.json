@@ -320,6 +320,14 @@
       "audience": "operator-current"
     },
     {
+      "path": "memory/MEMORY.md",
+      "audience": "agent-runtime"
+    },
+    {
+      "path": "memory/mandala-deploy.md",
+      "audience": "agent-runtime"
+    },
+    {
       "path": "skills/stow/SKILL.md",
       "audience": "public-product"
     }

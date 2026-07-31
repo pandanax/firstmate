@@ -165,6 +165,7 @@ fm_write_secondmate_meta() {
     "kind=secondmate" \
     "mode=secondmate" \
     "yolo=off" \
+    "merge=manual" \
     "home=$home" \
     "projects=$projects"
 }

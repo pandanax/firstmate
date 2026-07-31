@@ -22,7 +22,7 @@ Use the registry format and parser contract owned by the header of `bin/fm-proje
 Keep each registry description useful for identifying the project, but keep delivery posture, captain-private state, and detailed project knowledge in their existing designated homes.
 Do not turn the registry into project documentation.
 
-Resolve the project name, destination, delivery mode, and autonomy posture before changing local or remote state.
+Resolve the project name, destination, delivery mode, merge authority, and autonomy posture before changing local or remote state.
 Keep a newly added clone and its registry entry consistent, and roll back only artifacts created by the incomplete operation when a later initialization step fails and that rollback is safe.
 Do not overwrite or repurpose an existing path.
 
@@ -37,10 +37,11 @@ Choose the delivery mode when adding or creating the project:
 The optional `+yolo` posture changes routine approval authority but does not change the delivery mode.
 Default it off, and enable it only on the captain's explicit instruction.
 `AGENTS.md` section 7 owns the complete authority boundary and exceptions when it is on.
+Choose the separate merge authority using the registry contract in `bin/fm-project-mode.sh`, default it to `manual`, and use `AGENTS.md` section 7 as the single owner of its behavior and safety boundary.
 
 ## Add or clone an existing project
 
-Confirm the source URL, local project name, delivery mode, and autonomy posture.
+Confirm the source URL, local project name, delivery mode, merge authority, and autonomy posture.
 Clone into `projects/<name>` and add the registry entry only after the destination is known to be unused.
 A `no-mistakes` project must have an `origin` remote and must complete the initialization procedure below.
 A `direct-PR` project needs an `origin` remote but skips no-mistakes initialization.
@@ -49,7 +50,7 @@ A `local-only` project may have no remote and skips no-mistakes initialization.
 ## Create a project
 
 Creating a GitHub repository is outward-facing.
-Before making that remote change, propose the repository name, owner or organization, visibility, and delivery mode, defaulting visibility to private and delivery mode to `no-mistakes`, then obtain the captain's explicit consent for those values.
+Before making that remote change, propose the repository name, owner or organization, visibility, delivery mode, and merge authority, defaulting visibility to private, delivery mode to `no-mistakes`, and merge authority to `manual`, then obtain the captain's explicit consent for those values.
 Use `gh-axi` for the approved GitHub operation and consult its current help rather than relying on remembered flags.
 After remote creation succeeds, clone it locally, add the registry entry, and initialize it according to its delivery mode.
 

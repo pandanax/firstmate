@@ -7,6 +7,9 @@
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
 # must not include --repo or -R because the repository comes only from the URL.
+# A task recorded with merge=auto must use `-- --auto`, which enables the
+# forge-native auto-merge gate. A task recorded with merge=manual rejects
+# `--auto` and uses this helper only after the captain explicitly approves.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra gh-axi pr merge args>]
 set -eu
 
@@ -61,6 +64,14 @@ reject_repo_overrides() {
   done
 }
 
+caller_requests_auto() {
+  local arg
+  for arg in "$@"; do
+    [ "$arg" = --auto ] && return 0
+  done
+  return 1
+}
+
 reject_repo_overrides "$@" || exit 1
 
 # Task-derived paths are constructed only after the canonical ID validation.
@@ -69,6 +80,32 @@ if [ ! -f "$META" ] || [ -L "$META" ]; then
   echo "error: task metadata is unavailable" >&2
   exit 1
 fi
+
+MERGE_MODE=$(grep '^merge=' "$META" | cut -d= -f2- || true)
+[ -n "$MERGE_MODE" ] || MERGE_MODE=manual
+PROJECT=$(grep '^project=' "$META" | cut -d= -f2- || true)
+if [ -z "$PROJECT" ] || ! fm_project_has_github_repo "$PROJECT" "$PR_OWNER/$PR_REPO"; then
+  echo "error: PR repository does not belong to task project $ID" >&2
+  exit 1
+fi
+case "$MERGE_MODE" in
+  auto)
+    caller_requests_auto "$@" || {
+      echo "error: task $ID is merge=auto; use -- --auto so the forge owns required-check gating" >&2
+      exit 1
+    }
+    ;;
+  manual)
+    if caller_requests_auto "$@"; then
+      echo "error: task $ID is merge=manual; native auto-merge is not authorized" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "error: task $ID has invalid merge authority: $MERGE_MODE" >&2
+    exit 1
+    ;;
+esac
 
 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"
 grep -qxF "pr=$URL" "$META" || {

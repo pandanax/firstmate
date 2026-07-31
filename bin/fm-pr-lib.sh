@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Shared validation and atomic artifact helpers for merge polling on the
-# supported forges. Callers must validate task IDs and raw PR/MR URLs before
-# constructing task paths or performing any side effect.
+# Shared validation, project remote identity, and atomic artifact helpers for
+# merge polling on the supported forges. Callers must validate task IDs, raw
+# PR/MR URLs, and task-project repository identity before any merge side effect.
 #
 # The stored identity is provider-tagged: provider, url, host, path, number.
 # "path" is the full project path, which is owner/repository on GitHub and an
@@ -24,6 +24,7 @@ FM_PR_PATH=
 FM_PR_OWNER=
 FM_PR_REPO=
 FM_PR_NUMBER=
+FM_GIT_REMOTE_PATH=
 FM_PR_DATA_PROVIDER=
 FM_PR_DATA_URL=
 FM_PR_DATA_HOST=
@@ -205,6 +206,92 @@ fm_pr_url_parse() {
   FM_PR_HOST=$host
   FM_PR_PATH=$path
   FM_PR_NUMBER=${BASH_REMATCH[3]}
+}
+
+# Parse one canonical GitHub git remote into a lowercase owner/repository
+# identity. HTTPS, scp-like SSH, and ssh:// forms are supported; embedded
+# credentials, query strings, fragments, and non-GitHub hosts are refused.
+fm_git_remote_github_parse() {
+  local raw=${1-} pattern owner repo
+  local LC_ALL=C
+  FM_GIT_REMOTE_PATH=
+  pattern='^https://github\.com/([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]{0,37}[A-Za-z0-9])/([A-Za-z0-9._-]{1,100})(\.git)?$'
+  if [[ "$raw" =~ $pattern ]]; then
+    owner=${BASH_REMATCH[1]}
+    repo=${BASH_REMATCH[2]}
+  else
+    pattern='^git@github\.com:([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]{0,37}[A-Za-z0-9])/([A-Za-z0-9._-]{1,100})(\.git)?$'
+    if [[ "$raw" =~ $pattern ]]; then
+      owner=${BASH_REMATCH[1]}
+      repo=${BASH_REMATCH[2]}
+    else
+      pattern='^ssh://git@github\.com/([A-Za-z0-9]|[A-Za-z0-9][A-Za-z0-9-]{0,37}[A-Za-z0-9])/([A-Za-z0-9._-]{1,100})(\.git)?$'
+      [[ "$raw" =~ $pattern ]] || return 1
+      owner=${BASH_REMATCH[1]}
+      repo=${BASH_REMATCH[2]}
+    fi
+  fi
+  repo=${repo%.git}
+  [[ "$owner" != *--* ]] || return 1
+  [ "$repo" != . ] && [ "$repo" != .. ] || return 1
+  FM_GIT_REMOTE_PATH=$(printf '%s/%s' "$owner" "$repo" | tr '[:upper:]' '[:lower:]')
+}
+
+# Automatic merge is currently a GitHub-only protocol. The effective forge is
+# selected from origin's push URL because that is where the project's delivery
+# path publishes branches. Missing, local, GitLab, and malformed origins fail
+# closed without probing the network.
+fm_project_auto_merge_supported() {
+  local project=$1 remote_url
+  [ -d "$project" ] || return 1
+  remote_url=$(git -C "$project" remote get-url --push origin 2>/dev/null) \
+    || remote_url=$(git -C "$project" remote get-url origin 2>/dev/null) \
+    || return 1
+  fm_git_remote_github_parse "$remote_url"
+}
+
+fm_project_effective_merge_authority() {
+  local project=$1 requested=$2
+  case "$requested" in
+    manual)
+      printf 'manual\n'
+      ;;
+    auto)
+      if fm_project_auto_merge_supported "$project"; then
+        printf 'auto\n'
+      else
+        echo "warn: merge:auto is unavailable for the project's origin forge; defaulting to manual" >&2
+        printf 'manual\n'
+      fi
+      ;;
+    *)
+      echo "warn: invalid merge authority \"$requested\"; defaulting to manual" >&2
+      printf 'manual\n'
+      ;;
+  esac
+}
+
+# Bind a GitHub PR to the task project before applying its merge authority.
+# Any configured fetch or push remote may establish identity, which preserves
+# the supported fork/origin/upstream workflow without trusting an unrelated URL.
+fm_project_has_github_repo() {
+  local project=$1 expected=$2 remote remote_url
+  [ -d "$project" ] || return 1
+  expected=$(printf '%s' "$expected" | tr '[:upper:]' '[:lower:]')
+  while IFS= read -r remote; do
+    [ -n "$remote" ] || continue
+    remote_url=$(git -C "$project" remote get-url "$remote" 2>/dev/null || true)
+    if fm_git_remote_github_parse "$remote_url" && [ "$FM_GIT_REMOTE_PATH" = "$expected" ]; then
+      return 0
+    fi
+    remote_url=$(git -C "$project" remote get-url --push "$remote" 2>/dev/null || true)
+    if fm_git_remote_github_parse "$remote_url" && [ "$FM_GIT_REMOTE_PATH" = "$expected" ]; then
+      return 0
+    fi
+  done <<EOF
+$(git -C "$project" remote 2>/dev/null || true)
+EOF
+  return 1
 }
 
 fm_pr_head_valid() {
