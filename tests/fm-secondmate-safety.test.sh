@@ -26,12 +26,12 @@ test_fm_home_parameterization() {
   home_one="$TMP_ROOT/home one"
   home_two="$TMP_ROOT/home-two"
   mkdir -p "$home_one/data" "$home_one/state" "$home_two/data" "$home_two/state"
-  printf '%s\n' '- app [local-only +yolo] - test app (added 2026-06-22)' > "$home_one/data/projects.md"
+  printf '%s\n' '- app [local-only +yolo merge:manual] - test app (added 2026-06-22)' > "$home_one/data/projects.md"
 
   out=$(FM_HOME="$home_one" "$ROOT/bin/fm-project-mode.sh" app)
-  [ "$out" = "local-only on" ] || fail "fm-project-mode did not read projects.md from FM_HOME"
+  [ "$out" = "local-only on manual" ] || fail "fm-project-mode did not read projects.md from FM_HOME"
   out=$(FM_HOME="$home_two" "$ROOT/bin/fm-project-mode.sh" app 2>/dev/null)
-  [ "$out" = "no-mistakes off" ] || fail "fm-project-mode did not isolate missing registry by home"
+  [ "$out" = "no-mistakes off manual" ] || fail "fm-project-mode did not isolate missing registry by home"
 
   FM_HOME="$home_one" "$ROOT/bin/fm-brief.sh" task-a app >/dev/null || fail "brief scaffold failed under FM_HOME"
   brief="$home_one/data/task-a/brief.md"

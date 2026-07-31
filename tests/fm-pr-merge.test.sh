@@ -14,6 +14,7 @@
 #   (f) malformed PR URL fails fast without calling gh-axi
 #   (g) explicit merge method is not overridden by the default --squash
 #   (h) repo override args fail fast because the repo comes from the URL
+#   (i) project merge authority and native --auto invocation must agree
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -26,7 +27,7 @@ TMP_ROOT=$(fm_test_tmproot fm-pr-merge-tests)
 # Build a fresh sandbox for one test case: a state dir with a task meta and a
 # fakebin with a gh-axi mock that records how it was invoked. Echoes the case dir.
 make_case() {
-  local name=$1 case_dir fakebin
+  local name=$1 merge=${2:-manual} case_dir fakebin
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
   mkdir -p "$case_dir/state" "$fakebin"
@@ -35,7 +36,8 @@ make_case() {
     "worktree=$case_dir/wt" \
     "project=$case_dir/project" \
     "kind=ship" \
-    "mode=no-mistakes"
+    "mode=no-mistakes" \
+    "merge=$merge"
   # No worktree/project on disk; fm-pr-check.sh tolerates a worktree it cannot
   # stat and simply skips the pr_head lookup via `gh` in that case, so give it
   # one that resolves for cases that want pr_head recorded.
@@ -301,6 +303,51 @@ test_parses_pr_url_for_gh_axi() {
   pass "fm-pr-merge parses a GitHub PR URL into gh-axi number and --repo arguments"
 }
 
+test_auto_authority_uses_native_auto_merge() {
+  local case_dir
+  case_dir=$(make_case auto-authority auto)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  : > "$case_dir/gh-axi.log"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/31 -- --auto \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "auto-authority: fm-pr-merge failed"
+
+  grep -qxF 'pr merge 31 --repo example/repo --squash --auto' "$case_dir/gh-axi.log" \
+    || fail "auto-authority: native --auto was not forwarded to gh-axi"
+  pass "fm-pr-merge enables native auto-merge for merge=auto tasks"
+}
+
+test_merge_authority_mismatch_refuses_before_recording() {
+  local auto_case manual_case rc
+  auto_case=$(make_case auto-without-flag auto)
+  manual_case=$(make_case manual-with-auto manual)
+  mkdir -p "$auto_case/wt" "$manual_case/wt"
+  add_gh_mocks "$auto_case" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  add_gh_mocks "$manual_case" cccccccccccccccccccccccccccccccccccccccc
+  : > "$auto_case/gh-axi.log"
+  : > "$manual_case/gh-axi.log"
+
+  set +e
+  run_pr_merge "$auto_case" task-x1 https://github.com/example/repo/pull/32 \
+    > "$auto_case/stdout" 2> "$auto_case/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "auto-without-flag: direct merge must be refused"
+  assert_no_grep 'pr=https://' "$auto_case/state/task-x1.meta" \
+    "auto-without-flag: refusal must happen before PR state mutation"
+
+  set +e
+  run_pr_merge "$manual_case" task-x1 https://github.com/example/repo/pull/33 -- --auto \
+    > "$manual_case/stdout" 2> "$manual_case/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "manual-with-auto: auto-merge must be refused"
+  assert_no_grep 'pr=https://' "$manual_case/state/task-x1.meta" \
+    "manual-with-auto: refusal must happen before PR state mutation"
+  pass "fm-pr-merge fails closed when task merge authority and invocation disagree"
+}
+
 test_records_pr_and_head_before_merging
 test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
@@ -311,3 +358,5 @@ test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_parses_pr_url_for_gh_axi
+test_auto_authority_uses_native_auto_merge
+test_merge_authority_mismatch_refuses_before_recording
