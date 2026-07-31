@@ -31,6 +31,8 @@ make_case() {
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
   mkdir -p "$case_dir/state" "$fakebin"
+  fm_git_init_commit "$case_dir/project"
+  git -C "$case_dir/project" remote add origin https://github.com/example/repo.git
   fm_write_meta "$case_dir/state/task-x1.meta" \
     "window=fm-task-x1" \
     "worktree=$case_dir/wt" \
@@ -294,6 +296,7 @@ test_parses_pr_url_for_gh_axi() {
   mkdir -p "$case_dir/wt"
   add_gh_mocks "$case_dir" 6666666666666666666666666666666666666666
   : > "$case_dir/gh-axi.log"
+  git -C "$case_dir/project" remote set-url origin git@github.com:my-org/my-repo.git
 
   run_pr_merge "$case_dir" task-x1 https://github.com/my-org/my-repo/pull/126 \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "url-parsing: fm-pr-merge failed"
@@ -301,6 +304,47 @@ test_parses_pr_url_for_gh_axi() {
   grep -qxF 'pr merge 126 --repo my-org/my-repo --squash' "$case_dir/gh-axi.log" \
     || fail "url-parsing: gh-axi pr merge was not invoked as number + --repo + default --squash"
   pass "fm-pr-merge parses a GitHub PR URL into gh-axi number and --repo arguments"
+}
+
+test_pr_repository_must_belong_to_task_project() {
+  local case_dir rc
+  case_dir=$(make_case cross-project)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+  : > "$case_dir/gh-axi.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/another/repo/pull/41 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "cross-project: unrelated PR repository should be refused"
+  assert_grep 'PR repository does not belong to task project' "$case_dir/stderr" \
+    "cross-project: refusal did not explain repository identity mismatch"
+  assert_no_grep '^pr=' "$case_dir/state/task-x1.meta" \
+    "cross-project: unrelated PR was recorded before refusal"
+  assert_no_grep 'pr merge' "$case_dir/gh-axi.log" \
+    "cross-project: unrelated PR reached gh-axi merge"
+  pass "fm-pr-merge binds merge authority to the task project's repository"
+}
+
+test_configured_upstream_repository_is_accepted() {
+  local case_dir
+  case_dir=$(make_case upstream-repository)
+  mkdir -p "$case_dir/wt"
+  git -C "$case_dir/project" remote set-url origin git@github.com:fork-owner/repo.git
+  git -C "$case_dir/project" remote add upstream https://github.com/canonical/repo.git
+  add_gh_mocks "$case_dir" bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  : > "$case_dir/gh-axi.log"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/canonical/repo/pull/42 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "upstream-repository: configured upstream PR should be accepted"
+
+  grep -qxF 'pr merge 42 --repo canonical/repo --squash' "$case_dir/gh-axi.log" \
+    || fail "upstream-repository: configured upstream did not reach gh-axi"
+  pass "fm-pr-merge preserves configured fork/upstream PR delivery"
 }
 
 test_auto_authority_uses_native_auto_merge() {
@@ -358,5 +402,7 @@ test_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_parses_pr_url_for_gh_axi
+test_pr_repository_must_belong_to_task_project
+test_configured_upstream_repository_is_accepted
 test_auto_authority_uses_native_auto_merge
 test_merge_authority_mismatch_refuses_before_recording

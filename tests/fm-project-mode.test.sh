@@ -53,3 +53,24 @@ actual=$(PANDAMATE_PROJECT_SLUG=unregistered PANDAMATE_MERGE_MODE=auto \
 [ "$actual" = "no-mistakes off auto" ] \
   || fail "matching Pandamate launch did not apply to the safe unregistered defaults: '$actual'"
 pass "fm-project-mode scopes Pandamate merge authority to the matching launched project"
+
+# The spawn path uses this shared helper to reduce auto to manual before task
+# metadata is written when origin does not publish to GitHub.
+# shellcheck source=bin/fm-pr-lib.sh
+. "$ROOT/bin/fm-pr-lib.sh"
+github_project="$TMP_ROOT/github-project"
+local_project="$TMP_ROOT/local-project"
+fm_git_init_commit "$github_project"
+fm_git_init_commit "$local_project"
+git -C "$github_project" remote add origin git@github.com:Example/Repo.git
+git -C "$local_project" remote add origin "file://$TMP_ROOT/local.git"
+fm_project_auto_merge_supported "$github_project" \
+  || fail "GitHub origin was not recognized as auto-merge capable"
+if fm_project_auto_merge_supported "$local_project"; then
+  fail "non-GitHub origin was incorrectly recognized as auto-merge capable"
+fi
+actual=$(fm_project_effective_merge_authority "$github_project" auto 2>/dev/null)
+[ "$actual" = auto ] || fail "GitHub auto authority resolved to '$actual'"
+actual=$(fm_project_effective_merge_authority "$local_project" auto 2>/dev/null)
+[ "$actual" = manual ] || fail "unsupported forge auto authority resolved to '$actual'"
+pass "effective auto merge authority fails closed for unsupported project forges"

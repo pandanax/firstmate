@@ -83,6 +83,11 @@ fi
 
 MERGE_MODE=$(grep '^merge=' "$META" | cut -d= -f2- || true)
 [ -n "$MERGE_MODE" ] || MERGE_MODE=manual
+PROJECT=$(grep '^project=' "$META" | cut -d= -f2- || true)
+if [ -z "$PROJECT" ] || ! fm_project_has_github_repo "$PROJECT" "$PR_OWNER/$PR_REPO"; then
+  echo "error: PR repository does not belong to task project $ID" >&2
+  exit 1
+fi
 case "$MERGE_MODE" in
   auto)
     caller_requests_auto "$@" || {

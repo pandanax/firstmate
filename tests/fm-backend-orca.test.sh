@@ -478,6 +478,7 @@ test_spawn_writes_orca_metadata_and_launches_harness() {
   state="$TMP_ROOT/spawn-state"
   config="$TMP_ROOT/spawn-config"
   fm_git_worktree "$proj" "$wt" "fm/$id"
+  git -C "$proj" remote add origin https://github.com/example/spawn-project.git
   mkdir -p "$data/$id" "$state" "$config"
   printf 'brief\n' > "$data/$id/brief.md"
   touch "$state/.last-watcher-beat"

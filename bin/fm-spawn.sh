@@ -1418,6 +1418,7 @@ else
   read -r MODE YOLO MERGE_MODE <<EOF
 $("$FM_ROOT/bin/fm-project-mode.sh" "$PROJ_NAME")
 EOF
+  MERGE_MODE=$(fm_project_effective_merge_authority "$PROJ_ABS" "$MERGE_MODE")
 fi
 
 META_WINDOW=$T
